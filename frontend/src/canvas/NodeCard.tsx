@@ -1481,8 +1481,14 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     }
     setUpscaleStatus("upscaling");
     try {
-      await upscaleMedia(mediaId, resolution);
-      // Poll until upscaled asset is available
+      const result = await upscaleMedia(mediaId, resolution);
+      if (result.status === "done" && result.media_id) {
+        // New upscaled media — download it directly, no polling needed
+        directDownload(result.media_id, idx);
+        setUpscaleStatus("idle");
+        return;
+      }
+      // Fallback: poll until available
       for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 2000));
         const status = await getMediaStatus(mediaId);

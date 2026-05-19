@@ -461,14 +461,16 @@ export function mediaUrl(mediaId: string): string {
   return `/media/${encodeURIComponent(clean)}`;
 }
 
-export async function upscaleMedia(mediaId: string, resolution: string): Promise<{ status: string }> {
+export interface UpscaleResponse {
+  status: string;
+  media_id?: string;
+  url?: string;
+  operation_names?: string[];
+}
+
+export async function upscaleMedia(mediaId: string, resolution: string): Promise<UpscaleResponse> {
   const clean = mediaId.replace(/^media\//, "");
 
-  // Get a fresh captcha token from the extension before calling the API.
-  // The extension solves reCAPTCHA via its injected grecaptcha script and
-  // stores the token so it can be injected into Flow API calls. We bypass the
-  // extension's own proxy path (handleApiRequest) because the backend calls
-  // flow_sdk directly — so we must fetch the token ourselves and pass it.
   let captcha_token = "";
   try {
     const resp = await chrome.runtime.sendMessage({
@@ -477,11 +479,10 @@ export async function upscaleMedia(mediaId: string, resolution: string): Promise
     });
     if (resp?.token) captcha_token = resp.token;
   } catch {
-    // Extension not installed or not connected — leave token empty and let
-    // the backend fail with a recognizable error rather than breaking the path.
+    // Extension not installed
   }
 
-  return api<{ status: string }>(`/api/media/${encodeURIComponent(clean)}/upscale`, {
+  return api<UpscaleResponse>(`/api/media/${encodeURIComponent(clean)}/upscale`, {
     method: "POST",
     body: JSON.stringify({ resolution, captcha_token }),
   });
