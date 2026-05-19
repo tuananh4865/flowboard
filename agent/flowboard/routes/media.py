@@ -142,6 +142,29 @@ async def upscale_media(media_id: str, body: UpscaleRequest):
     if result.get("error"):
         raise HTTPException(502, f"Flow API error: {result['error']}")
 
+    if kind == "image":
+        new_media_id = result.get("media_id")
+        new_url = result.get("url")
+        if new_media_id and new_url:
+            media_service.ingest_urls([{"media_id": new_media_id, "url": new_url, "kind": "image"}])
+            return {"status": "done", "media_id": new_media_id, "url": new_url}
+
+    elif kind == "video":
+        op_names = result.get("operation_names", [])
+        workflows = result.get("workflows", [])
+        for _ in range(60):
+            await asyncio.sleep(2)
+            checked = await sdk.check_async(op_names, workflows)
+            if checked.get("error"):
+                break
+            ops = checked.get("operations", [])
+            if ops and all(op.get("done") for op in ops):
+                for op in ops:
+                    for me in op.get("media_entries", []):
+                        if me.get("media_id") and me.get("url"):
+                            media_service.ingest_urls([{"media_id": me["media_id"], "url": me["url"], "kind": "video"}])
+                return {"status": "done", "operation_names": op_names}
+
     return {"status": "pending", "raw": result}
 
 
