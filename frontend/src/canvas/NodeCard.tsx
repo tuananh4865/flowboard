@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
+import { mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl, upscaleMedia, getMediaStatus } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 
 const ICON: Record<string, string> = {
@@ -1439,40 +1439,86 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   const llmBusy = isLLMBusy(data);
   const downloadable = !!data.mediaId && data.type !== "prompt" && data.type !== "note";
 
+  const [showResolutions, setShowResolutions] = useState(false);
+  const [upscaleStatus, setUpscaleStatus] = useState<"idle" | "upscaling" | "error">("idle");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isImage = data.type === "image";
+  const isVideo = data.type === "video";
+
+  const RESOLUTIONS = isImage
+    ? [{ value: "1K", label: "1K (cached)", upscale: false }, { value: "2K", label: "2K (upscale)", upscale: true }, { value: "4K", label: "4K (upscale)", upscale: true }]
+    : isVideo
+    ? [{ value: "270p", label: "270p (cached)", upscale: false }, { value: "720p", label: "720p (default)", upscale: false }, { value: "1080p", label: "1080p (upscale)", upscale: true }, { value: "4K", label: "4K (upscale)", upscale: true }]
+    : [];
+
+  useEffect(() => {
+    if (!showResolutions) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowResolutions(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showResolutions]);
+
+  function directDownload(mediaId: string, idx: number) {
+    const safeTitle = (data.title || data.type).replace(/[^A-Za-z0-9_-]+/g, "_");
+    const ext = downloadExt(data.type);
+    const suffix = idx > 0 ? `-${idx + 1}` : "";
+    const a = document.createElement("a");
+    a.href = mediaUrl(mediaId);
+    a.download = `${safeTitle}-${data.shortId}${suffix}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function downloadWithResolution(mediaId: string, resolution: string, upscale: boolean, idx: number) {
+    setShowResolutions(false);
+    if (!upscale) {
+      directDownload(mediaId, idx);
+      return;
+    }
+    setUpscaleStatus("upscaling");
+    try {
+      await upscaleMedia(mediaId, resolution);
+      // Poll until upscaled asset is available
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const status = await getMediaStatus(mediaId);
+        if (status.available) {
+          directDownload(mediaId, idx);
+          setUpscaleStatus("idle");
+          return;
+        }
+      }
+      setUpscaleStatus("error");
+    } catch {
+      setUpscaleStatus("error");
+    }
+  }
+
+  function handleDownloadClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!showResolutions) {
+      setShowResolutions(true);
+      return;
+    }
+    setShowResolutions(false);
+  }
+
+  function handleResolutionSelect(res: { value: string; upscale: boolean }, idx: number) {
+    const rawIds = data.mediaIds?.length ? data.mediaIds : data.mediaId ? [data.mediaId] : [];
+    const ids = rawIds.filter((m): m is string => typeof m === "string" && m.length > 0);
+    const targetId = ids[idx] || ids[0];
+    if (!targetId) return;
+    downloadWithResolution(targetId, res.value, res.upscale, idx);
+  }
+
   function handleGenerate(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy) return; // guard: backend still composing for this node
     useGenerationStore.getState().openGenerationDialog(props.id, data.prompt ?? "");
-  }
-
-  function handleDownload(e: React.MouseEvent) {
-    e.stopPropagation();
-    // Download every variant, not just the first. `mediaIds` is the full
-    // list — `mediaId` is just the active variant — so a 4-variant image
-    // node was previously losing 3 of its 4 outputs. Filter out null
-    // placeholders that the partial-batch path may leave in `mediaIds`.
-    const rawIds =
-      data.mediaIds && data.mediaIds.length > 0
-        ? data.mediaIds
-        : data.mediaId
-          ? [data.mediaId]
-          : [];
-    const ids = rawIds.filter((m): m is string => typeof m === "string" && m.length > 0);
-    if (ids.length === 0) return;
-    const safeTitle = (data.title || data.type).replace(/[^A-Za-z0-9_-]+/g, "_");
-    const ext = downloadExt(data.type);
-    // `<a download>` only honours the suggested filename when the resource
-    // is same-origin — `/media/<id>` *is* same-origin (proxied by FastAPI),
-    // so the title-based filename sticks.
-    ids.forEach((mid, i) => {
-      const a = document.createElement("a");
-      a.href = mediaUrl(mid);
-      const suffix = ids.length > 1 ? `-${i + 1}` : "";
-      a.download = `${safeTitle}-${data.shortId}${suffix}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    });
   }
 
   return (
@@ -1497,15 +1543,31 @@ export function NodeCard(props: NodeProps<FlowNode>) {
         )}
         <div className="node-header__actions">
           {downloadable && (
-            <button
-              className="node-header__btn"
-              onClick={handleDownload}
-              aria-label="Download media"
-              title="Download"
-              tabIndex={0}
-            >
-              ⬇
-            </button>
+            <div ref={dropdownRef} style={{ position: "relative" }}>
+              <button
+                className={`node-header__btn${upscaleStatus === "upscaling" ? " node-header__btn--running" : ""}`}
+                onClick={handleDownloadClick}
+                aria-label="Download media"
+                title={upscaleStatus === "upscaling" ? "Upscaling…" : "Download"}
+                tabIndex={0}
+                disabled={upscaleStatus === "upscaling"}
+              >
+                {upscaleStatus === "upscaling" ? "⟳" : "⬇"}
+              </button>
+              {showResolutions && (
+                <div className="node-header__dropdown" onClick={e => e.stopPropagation()}>
+                  {RESOLUTIONS.map((res, i) => (
+                    <button
+                      key={res.value}
+                      className="node-header__dropdown-item"
+                      onClick={() => handleResolutionSelect(res, i)}
+                    >
+                      {res.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {isGenerable && (
             <button

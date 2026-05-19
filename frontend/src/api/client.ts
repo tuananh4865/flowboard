@@ -461,6 +461,14 @@ export function mediaUrl(mediaId: string): string {
   return `/media/${encodeURIComponent(clean)}`;
 }
 
+export function upscaleMedia(mediaId: string, resolution: string): Promise<{ status: string }> {
+  const clean = mediaId.replace(/^media\//, "");
+  return api<{ status: string }>(`/api/media/${encodeURIComponent(clean)}/upscale`, {
+    method: "POST",
+    body: JSON.stringify({ resolution }),
+  });
+}
+
 // ── Upload ───────────────────────────────────────────────────────────────────
 
 export interface UploadResponse {

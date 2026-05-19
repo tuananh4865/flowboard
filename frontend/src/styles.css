@@ -5242,3 +5242,38 @@ button:disabled {
   border-color: var(--accent);
 }
 
+
+/* ── Download Resolution Dropdown ─────────────────────────────────────────── */
+.node-header__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 9999;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.node-header__dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.node-header__dropdown-item:hover {
+  background: var(--panel-high);
+}
+
+.node-header__dropdown-item:not(:last-child) {
+  border-bottom: 1px solid var(--panel-border);
+}
