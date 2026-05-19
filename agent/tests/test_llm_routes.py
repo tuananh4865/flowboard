@@ -23,10 +23,10 @@ def tmp_secrets_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_provider_caches():
+async def _reset_provider_caches():
     """Each route test gets fresh provider probes — module-level singletons
     cache availability between tests otherwise."""
-    for p in registry.list_providers():
+    for p in await registry.list_providers():
         if hasattr(p, "reset_cache"):
             p.reset_cache()
     yield
@@ -39,11 +39,11 @@ def test_list_providers_returns_all_three(client, tmp_secrets_path):
     """All 3 registered providers (Claude / Gemini / OpenAI) appear with
     expected fields. xAI Grok was dropped — never shipped a usable CLI."""
     with patch.object(
-        registry._PROVIDERS["claude"], "is_available", return_value=False
+        registry._registry._providers["claude"], "is_available", return_value=False
     ), patch.object(
-        registry._PROVIDERS["gemini"], "is_available", return_value=False
+        registry._registry._providers["gemini"], "is_available", return_value=False
     ), patch.object(
-        registry._PROVIDERS["openai"], "is_available", return_value=False
+        registry._registry._providers["openai"], "is_available", return_value=False
     ):
         resp = client.get("/api/llm/providers")
     assert resp.status_code == 200
@@ -114,7 +114,7 @@ def test_setting_key_invalidates_provider_cache(client, tmp_secrets_path):
     state immediately — not wait for the 60s availability cache. OpenAI
     is the only provider that accepts API keys; verify its cache is
     reset on key save."""
-    openai = registry._PROVIDERS["openai"]
+    openai = registry._registry._providers["openai"]
     openai._cli_available = True  # type: ignore[attr-defined]
     resp = client.put("/api/llm/providers/openai", json={"apiKey": "sk-1"})
     assert resp.status_code == 200
@@ -128,7 +128,7 @@ def test_setting_key_invalidates_provider_cache(client, tmp_secrets_path):
 
 def test_test_endpoint_reports_success_with_latency(client, tmp_secrets_path):
     """Provider is_available returns True + run() succeeds → ok + latencyMs."""
-    openai = registry._PROVIDERS["openai"]
+    openai = registry._registry._providers["openai"]
     with patch.object(openai, "is_available", return_value=True), \
          patch.object(openai, "run", return_value="ok"):
         resp = client.post("/api/llm/providers/openai/test")
@@ -141,7 +141,7 @@ def test_test_endpoint_reports_success_with_latency(client, tmp_secrets_path):
 
 def test_test_endpoint_returns_unconfigured_message(client, tmp_secrets_path):
     """is_available False → ok: false with a friendly message, NOT a 500."""
-    openai = registry._PROVIDERS["openai"]
+    openai = registry._registry._providers["openai"]
     with patch.object(openai, "is_available", return_value=False):
         resp = client.post("/api/llm/providers/openai/test")
     assert resp.status_code == 200
@@ -152,7 +152,7 @@ def test_test_endpoint_returns_unconfigured_message(client, tmp_secrets_path):
 def test_test_endpoint_surfaces_llm_error(client, tmp_secrets_path):
     from flowboard.services.llm.base import LLMError
 
-    openai = registry._PROVIDERS["openai"]
+    openai = registry._registry._providers["openai"]
     with patch.object(openai, "is_available", return_value=True), \
          patch.object(openai, "run", side_effect=LLMError("HTTP 401: invalid key")):
         resp = client.post("/api/llm/providers/openai/test")
@@ -163,7 +163,7 @@ def test_test_endpoint_surfaces_llm_error(client, tmp_secrets_path):
 
 def test_test_endpoint_wraps_unexpected_exceptions(client, tmp_secrets_path):
     """Anything non-LLMError must still come out as ok:false, not 500."""
-    openai = registry._PROVIDERS["openai"]
+    openai = registry._registry._providers["openai"]
     with patch.object(openai, "is_available", return_value=True), \
          patch.object(openai, "run", side_effect=RuntimeError("kaboom")):
         resp = client.post("/api/llm/providers/openai/test")

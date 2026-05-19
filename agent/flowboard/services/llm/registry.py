@@ -11,6 +11,7 @@ CLI, so it was dropped from both UI and registry.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Literal, Optional
 
@@ -26,24 +27,35 @@ logger = logging.getLogger(__name__)
 Feature = Literal["auto_prompt", "vision", "planner"]
 
 
-# Module-level singletons. Each provider class has cheap probe state
-# (e.g. cached `--version` result) so re-instantiating per call would
-# defeat the cache. Same lifetime as the agent process.
-_PROVIDERS: dict[str, LLMProvider] = {
-    "claude": ClaudeProvider(),
-    "gemini": GeminiProvider(),
-    "openai": OpenAIProvider(),
-}
+class ProviderRegistry:
+    def __init__(self):
+        self._providers: dict[str, LLMProvider] = {
+            "claude": ClaudeProvider(),
+            "gemini": GeminiProvider(),
+            "openai": OpenAIProvider(),
+        }
+        self._lock = asyncio.Lock()
+
+    async def get_provider(self, name: str) -> Optional[LLMProvider]:
+        async with self._lock:
+            return self._providers.get(name)
+
+    async def list_providers(self) -> list[LLMProvider]:
+        async with self._lock:
+            return list(self._providers.values())
 
 
-def get_provider(name: str) -> Optional[LLMProvider]:
+_registry = ProviderRegistry()
+
+
+async def get_provider(name: str) -> Optional[LLMProvider]:
     """Lookup by name. None if the name is unknown."""
-    return _PROVIDERS.get(name)
+    return await _registry.get_provider(name)
 
 
-def list_providers() -> list[LLMProvider]:
+async def list_providers() -> list[LLMProvider]:
     """All registered providers, in deterministic order."""
-    return list(_PROVIDERS.values())
+    return await _registry.list_providers()
 
 
 async def run_llm(
@@ -77,7 +89,7 @@ async def run_llm(
             f"No AI provider configured for {feature}; "
             f"open the AI Provider settings to set one up."
         )
-    provider = _PROVIDERS.get(provider_name)
+    provider = await _registry.get_provider(provider_name)
     if provider is None:
         raise LLMError(
             f"Unknown provider {provider_name!r} configured for {feature}; "

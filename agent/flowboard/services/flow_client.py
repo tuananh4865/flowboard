@@ -49,6 +49,7 @@ class FlowClient:
 
     def __init__(self) -> None:
         self._ws: Optional[Any] = None
+        self._connections: list[Any] = []
         self._pending: dict[str, asyncio.Future] = {}
         self._callback_secret: str = secrets.token_urlsafe(32)
 
@@ -89,10 +90,32 @@ class FlowClient:
     def callback_secret(self) -> str:
         return self._callback_secret
 
-    def set_extension(self, ws: Any) -> None:
+    def _add_connection(self, ws: Any) -> None:
+        if all(existing is not ws for existing in self._connections):
+            self._connections.append(ws)
+
+    def _promote_extension(self, ws: Optional[Any]) -> None:
+        if ws is None:
+            return
+        self._add_connection(ws)
         self._ws = ws
 
-    def clear_extension(self) -> None:
+    def set_extension(self, ws: Any) -> None:
+        self._add_connection(ws)
+        if self._ws is None:
+            self._ws = ws
+
+    def clear_extension(self, ws: Optional[Any] = None) -> None:
+        if ws is not None:
+            self._connections = [existing for existing in self._connections if existing is not ws]
+        else:
+            self._connections.clear()
+
+        if ws is not None and self._ws is not ws:
+            return
+        if ws is not None and self._connections:
+            self._ws = self._connections[-1]
+            return
         self._ws = None
         self._flow_key_present = False
         self._flow_key = None
@@ -190,13 +213,19 @@ class FlowClient:
         return True
 
     # ── inbound handling ───────────────────────────────────────────────────
-    async def handle_message(self, data: dict) -> None:
+    async def handle_message(self, data: dict, ws: Optional[Any] = None) -> None:
         t = data.get("type")
         if t == "extension_ready":
-            self._flow_key_present = bool(data.get("flowKeyPresent"))
+            flow_key_present = bool(data.get("flowKeyPresent"))
+            if flow_key_present:
+                self._promote_extension(ws)
+                self._flow_key_present = True
+            elif ws is None or self._ws is ws:
+                self._flow_key_present = bool(self._flow_key)
             logger.info("extension_ready flowKeyPresent=%s", self._flow_key_present)
             return
         if t == "token_captured":
+            self._promote_extension(ws)
             self._flow_key_present = True
             self._token_captured_at = time.time()
             flow_key = data.get("flowKey")

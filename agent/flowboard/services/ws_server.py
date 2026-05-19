@@ -37,13 +37,13 @@ async def _handler(websocket) -> None:
                 logger.warning("invalid JSON from extension")
                 continue
             try:
-                await flow_client.handle_message(data)
+                await flow_client.handle_message(data, websocket)
             except Exception:  # noqa: BLE001
                 logger.exception("error handling extension message")
     except websockets.ConnectionClosed:
         pass
     finally:
-        flow_client.clear_extension()
+        flow_client.clear_extension(websocket)
         logger.info("extension disconnected")
 
 

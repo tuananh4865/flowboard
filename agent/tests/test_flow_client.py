@@ -76,6 +76,52 @@ async def test_clear_extension_fails_pending_futures():
     assert result == {"error": "extension_disconnected"}
 
 
+def test_stale_extension_disconnect_does_not_clear_current_socket():
+    client = FlowClient()
+    old_ws = FakeWs()
+    new_ws = FakeWs()
+    client.set_extension(old_ws)
+    client.set_extension(new_ws)
+
+    client.clear_extension(old_ws)
+
+    assert client.connected is True
+    assert client._ws is new_ws
+
+
+@pytest.mark.asyncio
+async def test_token_socket_stays_active_when_other_socket_reports_no_token():
+    client = FlowClient()
+    token_ws = FakeWs()
+    empty_ws = FakeWs()
+    client.set_extension(token_ws)
+    client.set_extension(empty_ws)
+
+    await client.handle_message(
+        {"type": "token_captured", "flowKey": "ya29.token"},
+        token_ws,
+    )
+    await client.handle_message({"type": "extension_ready", "flowKeyPresent": False}, empty_ws)
+
+    assert client.connected is True
+    assert client._ws is token_ws
+    assert client.ws_stats["flow_key_present"] is True
+
+
+@pytest.mark.asyncio
+async def test_extension_ready_with_token_promotes_socket():
+    client = FlowClient()
+    empty_ws = FakeWs()
+    token_ws = FakeWs()
+    client.set_extension(empty_ws)
+    client.set_extension(token_ws)
+
+    await client.handle_message({"type": "extension_ready", "flowKeyPresent": True}, token_ws)
+
+    assert client._ws is token_ws
+    assert client.ws_stats["flow_key_present"] is True
+
+
 @pytest.mark.asyncio
 async def test_handle_token_captured_updates_stats():
     client = FlowClient()

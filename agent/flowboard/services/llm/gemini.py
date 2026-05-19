@@ -32,7 +32,6 @@ from typing import Optional
 from .base import LLMError
 from .cli_utils import (
     resolve_cli_binary,
-    get_windows_npm_paths,
     validate_prompt_size,
     validate_attachment_paths,
     DEFAULT_SUBPROCESS_TIMEOUT,
@@ -186,7 +185,10 @@ class GeminiProvider:
         # we don't pass `-m` so Gemini CLI's own `/model` setting wins.
         model = os.environ.get("FLOWBOARD_GEMINI_MODEL") or _DEFAULT_MODEL
         gemini_bin = resolve_cli_binary(_CLI_BIN, _PROBE_TIMEOUT)
-        args: list[str] = [gemini_bin]
+        # FastAPI launches Gemini as a headless subprocess. Without
+        # this session-scoped trust flag the CLI exits 55 in untrusted
+        # workspaces before it can answer the provider request.
+        args: list[str] = [gemini_bin, "--skip-trust"]
         if model:
             args += ["-m", model]
         # ``-o json`` gives us a structured envelope instead of raw text
@@ -204,14 +206,16 @@ class GeminiProvider:
     async def _invoke_locked(
         self, args: list[str], *, timeout: float
     ) -> str:
-        """Subprocess invocation using subprocess.run (Windows-compatible).
+        """Subprocess invocation using subprocess.run in a worker thread.
 
         Assumed to be holding ``_call_lock``. This remains async for
-        compatibility with the semaphore pattern, but internally uses
-        synchronous subprocess.run() which avoids asyncio subprocess
-        issues on Windows."""
+        compatibility with the semaphore pattern and to keep FastAPI's
+        event loop responsive while the CLI waits on the network.
+        ``subprocess.run()`` avoids asyncio subprocess issues on Windows.
+        """
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 args,
                 capture_output=True,
                 timeout=timeout,

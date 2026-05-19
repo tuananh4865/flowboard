@@ -72,7 +72,7 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch):
         # Sentinel for vision-gate tests — text-only future provider.
         "textonly": _FakeProvider("textonly", supports_vision=False, available=True),
     }
-    monkeypatch.setattr(registry, "_PROVIDERS", fakes)
+    monkeypatch.setattr(registry._registry, "_providers", fakes)
     return fakes
 
 
@@ -240,3 +240,24 @@ async def test_real_claude_provider_delegates_to_claude_cli():
     assert kwargs["system_prompt"] == "s"
     assert kwargs["attachments"] == ["/x.jpg"]
     assert kwargs["timeout"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_registry_access(tmp_secrets_path, fake_providers):
+    """Verify get_provider and list_providers still work correctly."""
+    # Test get_provider
+    provider = await registry.get_provider("claude")
+    assert provider is not None
+    assert provider.name == "claude"
+
+    provider = await registry.get_provider("nonexistent")
+    assert provider is None
+
+    # Test list_providers
+    providers = await registry.list_providers()
+    provider_names = [p.name for p in providers]
+    assert "claude" in provider_names
+    assert "gemini" in provider_names
+    assert "openai" in provider_names
+    assert "textonly" in provider_names
+    assert len(providers) == 4

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from flowboard.db import get_session
-from flowboard.db.models import Board, Edge, Node
+from flowboard.db.models import Asset, Board, Edge, Node, Request
 from flowboard.short_id import generate_unique_short_id
 
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
@@ -121,6 +121,19 @@ def delete_node(node_id: int):
         ).all()
         for e in edges:
             s.delete(e)
+        requests = s.exec(select(Request).where(Request.node_id == node_id)).all()
+        for request in requests:
+            request.node_id = None
+            s.add(request)
+        assets = s.exec(select(Asset).where(Asset.node_id == node_id)).all()
+        for asset in assets:
+            asset.node_id = None
+            s.add(asset)
         s.delete(node)
         s.commit()
-        return {"ok": True, "deleted_edges": [e.id for e in edges]}
+        return {
+            "ok": True,
+            "deleted_edges": [e.id for e in edges],
+            "detached_requests": [request.id for request in requests],
+            "detached_assets": [asset.id for asset in assets],
+        }

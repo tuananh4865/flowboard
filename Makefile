@@ -3,6 +3,8 @@
 # Prefer uv (https://github.com/astral-sh/uv) — ~10× faster than pip.
 # Falls back to stdlib venv + pip when uv is not installed.
 HAS_UV := $(shell command -v uv 2>/dev/null)
+TAILSCALE_IP := $(shell ifconfig 2>/dev/null | awk '/inet 100\./ {print $$2; exit}')
+FRONTEND_HOST ?= $(if $(TAILSCALE_IP),$(TAILSCALE_IP),127.0.0.1)
 
 help:
 	@echo "Flowboard dev commands:"
@@ -11,7 +13,7 @@ help:
 	@echo "  make update       - upgrade existing deps (agent + frontend)"
 	@echo "  make dev          - hint: run agent + frontend in separate terminals"
 	@echo "  make agent        - run agent only (FastAPI on :8101)"
-	@echo "  make frontend     - run frontend only (Vite on :5173)"
+	@echo "  make frontend     - run frontend only (Vite on $(FRONTEND_HOST):5173)"
 	@echo "  make extension    - package extension (unpacked: load from ./extension)"
 	@echo "  make clean        - remove build + cache"
 
@@ -47,7 +49,8 @@ agent:
 	cd agent && .venv/bin/uvicorn flowboard.main:app --reload --port 8101
 
 frontend:
-	cd frontend && npm run dev
+	@echo "Frontend host: $(FRONTEND_HOST)"
+	cd frontend && npm run dev -- --host $(FRONTEND_HOST)
 
 clean:
 	rm -rf agent/.venv agent/**/__pycache__ frontend/node_modules frontend/dist

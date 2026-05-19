@@ -231,7 +231,7 @@ async def generate_plan_reply(
         # them to configure; mock keeps the chat reply path graceful).
         config = secrets.read_active_providers()
         provider_name = config.get("planner")
-        provider = registry.get_provider(provider_name) if provider_name else None
+        provider = await registry.get_provider(provider_name) if provider_name else None
         if provider is None or not await provider.is_available():
             logger.info(
                 "planner: %s unavailable, using mock", provider_name or "unset"

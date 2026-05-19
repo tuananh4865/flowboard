@@ -252,3 +252,32 @@ def test_delete_node_cascades_edges(client):
     # edge is gone server-side
     detail = client.get(f"/api/boards/{b['id']}").json()
     assert detail["edges"] == []
+
+
+def test_delete_node_detaches_requests_and_assets(client):
+    b = _make_board(client)
+    n = client.post("/api/nodes", json={"board_id": b["id"], "type": "image"}).json()
+
+    from flowboard.db import get_session
+    from flowboard.db.models import Asset, Request
+
+    with get_session() as s:
+        request = Request(node_id=n["id"], type="gen_image")
+        asset = Asset(node_id=n["id"], kind="image", uuid_media_id="media-1")
+        s.add(request)
+        s.add(asset)
+        s.commit()
+        s.refresh(request)
+        s.refresh(asset)
+        request_id = request.id
+        asset_id = asset.id
+
+    r = client.delete(f"/api/nodes/{n['id']}")
+    assert r.status_code == 200
+    body = r.json()
+    assert request_id in body["detached_requests"]
+    assert asset_id in body["detached_assets"]
+
+    with get_session() as s:
+        assert s.get(Request, request_id).node_id is None
+        assert s.get(Asset, asset_id).node_id is None

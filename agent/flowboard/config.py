@@ -14,4 +14,8 @@ PLANNER_MODEL = os.getenv("FLOWBOARD_PLANNER_MODEL", "claude-sonnet-4-6")
 # otherwise mock. Default auto.
 PLANNER_BACKEND = os.getenv("FLOWBOARD_PLANNER_BACKEND", "auto")
 
+FLOWBOARD_API_BASE_URL = os.getenv("FLOWBOARD_API_BASE_URL", "")
+FLOWBOARD_API_KEY = os.getenv("FLOWBOARD_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)

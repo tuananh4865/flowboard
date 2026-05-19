@@ -43,7 +43,6 @@ from .cli_utils import (
     resolve_cli_binary,
     validate_prompt_size,
     validate_attachment_paths,
-    DEFAULT_SUBPROCESS_TIMEOUT,
     CLI_PROBE_TIMEOUT,
 )
 
@@ -101,7 +100,8 @@ class OpenAIProvider:
         # Step 1: does the binary exist + run `--version`?
         try:
             codex_bin = resolve_cli_binary(_CLI_BIN, CLI_PROBE_TIMEOUT)
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 [codex_bin, "--version"],
                 capture_output=True,
                 timeout=CLI_PROBE_TIMEOUT,
@@ -120,7 +120,8 @@ class OpenAIProvider:
         # Step 2: parse `--help` for an image-attachment flag.
         try:
             codex_bin = resolve_cli_binary(_CLI_BIN, CLI_PROBE_TIMEOUT)
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 [codex_bin, "--help"],
                 capture_output=True,
                 timeout=CLI_PROBE_TIMEOUT,
@@ -235,8 +236,7 @@ class OpenAIProvider:
         attachments: Optional[list[str]],
         timeout: float,
     ) -> str:
-        """Spawn `codex exec --output-format json -p <prompt>` and parse
-        the JSON envelope (similar shape to `claude` CLI)."""
+        """Spawn `codex exec --json -` and parse the JSONL event stream."""
         import os
 
         # Validate inputs
@@ -254,19 +254,22 @@ class OpenAIProvider:
         # cmd.exe re-parses argv for ``.cmd``-shimmed binaries and
         # mangles newlines / quotes in long prompts. Stdin sidesteps the
         # parser entirely.
-        args: list[str] = [
-            codex_bin, "exec", "--output-format", "json", "-p", "-",
-        ]
-        if system_prompt:
-            args += ["--system", system_prompt]
+        args: list[str] = [codex_bin, "exec", "--json", "-"]
         if attachments and self._cli_image_flag:
             for path in attachments:
                 args += [self._cli_image_flag, os.path.abspath(path)]
 
+        prompt = (
+            f"[System: {system_prompt}]\n\n{user_prompt}"
+            if system_prompt
+            else user_prompt
+        )
+
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 args,
-                input=user_prompt.encode("utf-8"),
+                input=prompt.encode("utf-8"),
                 capture_output=True,
                 timeout=timeout,
             )
@@ -281,30 +284,7 @@ class OpenAIProvider:
             stderr = result.stderr.decode(errors="replace")[:400]
             raise LLMError(f"codex CLI exited {result.returncode}: {stderr}")
 
-        stdout = result.stdout.decode(errors="replace")
-        try:
-            envelope = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise LLMError(
-                f"codex CLI returned non-JSON output: {stdout[:200]}"
-            ) from exc
-
-        if not isinstance(envelope, dict):
-            raise LLMError("codex CLI envelope is not an object")
-
-        # Codex envelope shape mirrors Claude CLI: {result: "..."} or
-        # {is_error: true, ...}. Tolerate both `result` and `output_text`
-        # since the exact field name has shifted across CLI versions.
-        if envelope.get("is_error") or envelope.get("error"):
-            raise LLMError(
-                f"codex CLI reported error: "
-                f"{envelope.get('error') or envelope.get('result') or 'unknown'}"
-            )
-        for key in ("result", "output_text", "text"):
-            val = envelope.get(key)
-            if isinstance(val, str):
-                return val
-        raise LLMError(f"codex CLI envelope missing string output: {envelope!r:.200}")
+        return _parse_codex_jsonl(result.stdout.decode(errors="replace"))
 
     # ── API dispatch ─────────────────────────────────────────────────
 
@@ -369,6 +349,52 @@ class OpenAIProvider:
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+
+def _parse_codex_jsonl(stdout: str) -> str:
+    """Extract the final agent message from `codex exec --json` JSONL.
+
+    The CLI can print non-JSON warnings before events, so parse line by
+    line and ignore unrelated text. Older Codex builds returned a single
+    JSON object; keep that shape supported as a fallback.
+    """
+    last_text: Optional[str] = None
+    saw_json = False
+    errors: list[str] = []
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        saw_json = True
+        if not isinstance(event, dict):
+            continue
+        if event.get("is_error") or event.get("error"):
+            errors.append(str(event.get("error") or event.get("result") or "unknown"))
+            continue
+        for key in ("result", "output_text", "text"):
+            val = event.get(key)
+            if isinstance(val, str):
+                last_text = val
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("type") == "agent_message":
+            text = item.get("text")
+            if isinstance(text, str):
+                last_text = text
+        if event.get("type") in {"turn.failed", "error"}:
+            err = event.get("error") or event.get("message") or event.get("reason")
+            if err:
+                errors.append(str(err))
+    if last_text is not None:
+        return last_text
+    if errors:
+        raise LLMError(f"codex CLI reported error: {errors[-1][:200]}")
+    if saw_json:
+        raise LLMError("codex CLI JSONL missing agent_message text")
+    raise LLMError(f"codex CLI returned non-JSON output: {stdout[:200]}")
+
 
 def _image_url_block(path: str) -> dict:
     p = Path(path)

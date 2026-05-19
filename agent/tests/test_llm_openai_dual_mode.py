@@ -7,16 +7,17 @@ on whether attachments are present.
 
 No real subprocess + no real network. Both transports are stubbed.
 
-The provider invokes ``codex`` synchronously via ``subprocess.run`` (a
-deliberate Windows-compat choice — asyncio subprocess on Windows requires
+The provider invokes ``codex`` via ``subprocess.run`` in a worker thread
+(a deliberate Windows-compat choice — asyncio subprocess on Windows requires
 ``ProactorEventLoop`` which FastAPI doesn't use). Tests stub
 ``subprocess.run`` at the module boundary. Stdin-based prompt delivery
 (see test_run_text_via_cli) sidesteps the cmd.exe argv re-parser that
-mangles long prompts on ``.cmd``-shimmed npm installs.
+mangles long prompts on ``.cmd``-shimmed npm installs. Current Codex CLI
+uses ``codex exec --json -`` and emits JSONL events.
 """
 from __future__ import annotations
 
-import subprocess as _subprocess
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -263,6 +264,15 @@ def _route_dispatch(envelope_stdout: bytes, *, image_flag: Optional[str] = "--im
     return dispatcher
 
 
+def _codex_jsonl(text: str) -> bytes:
+    return (
+        '{"type":"thread.started","thread_id":"t"}\n'
+        '{"type":"turn.started"}\n'
+        f'{{"type":"item.completed","item":{{"type":"agent_message","text":{json.dumps(text)}}}}}\n'
+        '{"type":"turn.completed"}\n'
+    ).encode()
+
+
 @pytest.mark.asyncio
 async def test_run_text_via_cli_when_codex_available(
     tmp_secrets_path, monkeypatch
@@ -275,7 +285,7 @@ async def test_run_text_via_cli_when_codex_available(
     _stub_resolve(monkeypatch)
     state = _stub_run(
         monkeypatch,
-        _route_dispatch(b'{"result": "hello text"}\n'),
+        _route_dispatch(_codex_jsonl("hello text")),
     )
     out = await p.run("hi", system_prompt="be terse")
     assert out == "hello text"
@@ -287,11 +297,11 @@ async def test_run_text_via_cli_when_codex_available(
     assert len(dispatch_calls) == 1
     argv, kwargs = dispatch_calls[0]
     assert "exec" in argv
-    assert "-p" in argv and "-" in argv
+    assert "--json" in argv and "-" in argv
     # Prompt is on stdin, not in argv.
-    assert kwargs["input"] == b"hi"
+    assert kwargs["input"] == b"[System: be terse]\n\nhi"
     assert "hi" not in argv
-    assert "--system" in argv
+    assert "--system" not in argv
 
 
 @pytest.mark.asyncio
@@ -308,15 +318,21 @@ async def test_run_vision_via_cli_when_image_flag_resolved(
     _stub_resolve(monkeypatch)
     state = _stub_run(
         monkeypatch,
-        _route_dispatch(b'{"result": "described"}\n', image_flag="--image"),
+        _route_dispatch(_codex_jsonl("described"), image_flag="--image"),
     )
     # Stub httpx to assert it's never called.
     httpx_called = {"n": 0}
 
     class _ShouldNotBeUsed:
-        def __init__(self, *a, **kw): pass
-        async def __aenter__(self): httpx_called["n"] += 1; return self
-        async def __aexit__(self, *a): return None
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            httpx_called["n"] += 1
+            return self
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(httpx, "AsyncClient", _ShouldNotBeUsed)
     out = await p.run("describe", attachments=[str(img)])
@@ -394,7 +410,7 @@ async def test_run_text_via_codex_text_only_works(
     _stub_resolve(monkeypatch)
     _stub_run(
         monkeypatch,
-        _route_dispatch(b'{"result": "text answer"}\n', image_flag=None),
+        _route_dispatch(_codex_jsonl("text answer"), image_flag=None),
     )
     out = await p.run("hi")
     assert out == "text answer"

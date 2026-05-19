@@ -43,7 +43,8 @@ async def _probe_available() -> bool:
     # Try to resolve and probe claude binary
     try:
         claude_bin = resolve_cli_binary(_CLI_BIN, CLI_PROBE_TIMEOUT)
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             [claude_bin, "--version"],
             capture_output=True,
             timeout=CLI_PROBE_TIMEOUT,
@@ -151,9 +152,12 @@ async def run_claude(
                 args += ["--add-dir", parent]
         args += ["--permission-mode", "bypassPermissions"]
 
-    # Use synchronous subprocess.run() to avoid asyncio subprocess issues on Windows.
+    # Run the Windows-compatible subprocess call in a worker thread so a
+    # slow OAuth CLI request doesn't block FastAPI's event loop, health
+    # checks, or the extension WebSocket.
     try:
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             args,
             input=full_prompt.encode("utf-8"),
             capture_output=True,
@@ -179,6 +183,14 @@ async def run_claude(
             f"claude CLI returned non-JSON output: {stdout[:200]}"
         ) from exc
 
+    if isinstance(envelope, list):
+        envelope = next(
+            (
+                item for item in reversed(envelope)
+                if isinstance(item, dict) and item.get("type") == "result"
+            ),
+            None,
+        )
     if not isinstance(envelope, dict):
         raise ClaudeCliError("claude CLI envelope is not an object")
 

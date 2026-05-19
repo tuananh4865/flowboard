@@ -1,7 +1,7 @@
 """Tests for services/claude_cli.py.
 
-The provider invokes ``claude`` synchronously via ``subprocess.run`` (a
-deliberate Windows-compat choice — asyncio subprocess on Windows requires
+The provider invokes ``claude`` via ``subprocess.run`` in a worker thread
+(a deliberate Windows-compat choice — asyncio subprocess on Windows requires
 ``ProactorEventLoop`` which FastAPI doesn't use). Tests stub
 ``subprocess.run`` at the module boundary and assert on the argv it
 receives plus the JSON envelope it returns.
@@ -38,6 +38,22 @@ def _envelope(result_text: str, is_error: bool = False) -> bytes:
             "result": result_text,
             "duration_ms": 10,
         }
+    ).encode()
+
+
+def _event_envelope(result_text: str, is_error: bool = False) -> bytes:
+    return json.dumps(
+        [
+            {"type": "system", "subtype": "init"},
+            {"type": "assistant", "message": {"content": []}},
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": is_error,
+                "result": result_text,
+                "duration_ms": 10,
+            },
+        ]
     ).encode()
 
 
@@ -101,8 +117,10 @@ async def test_run_claude_attachments_embed_as_at_paths(monkeypatch, tmp_path):
     stdin payload (not argv). Permission flags MUST still be present:
     parent dirs --add-dir-ed, --permission-mode bypassPermissions, so
     the Read tool can open the files non-interactively."""
-    img_a = tmp_path / "a.png"; img_a.write_bytes(b"fake")
-    img_b = tmp_path / "b.png"; img_b.write_bytes(b"fake")
+    img_a = tmp_path / "a.png"
+    img_a.write_bytes(b"fake")
+    img_b = tmp_path / "b.png"
+    img_b.write_bytes(b"fake")
     _stub_resolve(monkeypatch)
     state = _stub_run(monkeypatch, _FakeResult(returncode=0, stdout=_envelope("ok")))
     await claude_cli.run_claude(
@@ -138,6 +156,15 @@ async def test_run_claude_no_attachments_skips_permission_flags(monkeypatch):
     argv = list(state["calls"][0][0][0])
     assert "--add-dir" not in argv
     assert "--permission-mode" not in argv
+
+
+@pytest.mark.asyncio
+async def test_run_claude_accepts_event_array_envelope(monkeypatch):
+    """Newer Claude CLI builds return a JSON array of events in json
+    mode; the final result event carries the text output."""
+    _stub_resolve(monkeypatch)
+    _stub_run(monkeypatch, _FakeResult(returncode=0, stdout=_event_envelope("ok")))
+    assert await claude_cli.run_claude(user_prompt="x") == "ok"
 
 
 @pytest.mark.asyncio

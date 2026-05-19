@@ -75,13 +75,23 @@ async def list_providers() -> list[dict]:
     of test outcome). `mode` is meaningful only for OpenAI ("cli"/"api"/"none").
     """
     out: list[dict] = []
-    for provider in registry.list_providers():
+    for provider in await registry.list_providers():
         # CLI providers: available implies configured. API providers:
         # `configured` means a key exists; `available` adds "key works"
         # via the cached probe. Splitting the two lets the UI distinguish
         # "user has set things up but the key is bad" from "user hasn't
         # set anything up yet".
-        available = await provider.is_available()
+        error_message: Optional[str] = None
+        try:
+            available = await provider.is_available()
+        except LLMError as e:
+            available = False
+            error_message = str(e)
+        except Exception as e:
+            available = False
+            error_message = f"unexpected error: {type(e).__name__}"
+            logger.exception("llm: is_available check failed for %s", provider.name)
+
         if provider.name == "openai":
             mode = provider.mode  # type: ignore[attr-defined]
             configured = (
@@ -94,14 +104,17 @@ async def list_providers() -> list[dict]:
             configured = available
             requires_key = False
 
-        out.append({
+        item = {
             "name": provider.name,
             "supportsVision": provider.supports_vision,
             "available": available,
             "configured": configured,
             "requiresKey": requires_key,
             "mode": mode,
-        })
+        }
+        if error_message:
+            item["error"] = error_message
+        out.append(item)
     return out
 
 
@@ -125,8 +138,7 @@ async def set_provider_key(name: str, body: _ApiKeyBody) -> dict:
         )
     secrets.set_api_key(name, body.apiKey)
     # Bust the relevant provider's availability cache so the next /providers
-    # poll reflects the change immediately rather than waiting up to 60s.
-    provider = registry.get_provider(name)
+    provider = await registry.get_provider(name)
     if provider is not None and hasattr(provider, "reset_cache"):
         provider.reset_cache()
     logger.info("llm: api key %s for %s", "set" if body.apiKey else "cleared", name)
@@ -144,9 +156,7 @@ async def test_provider(name: str) -> dict:
     button. Returns `{ok, latencyMs}` on success or `{ok: false, error}`
     on any failure mode.
     """
-    if name not in _VALID_PROVIDER_NAMES:
-        raise HTTPException(status_code=404, detail=f"unknown provider {name!r}")
-    provider = registry.get_provider(name)
+    provider = await registry.get_provider(name)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"provider {name!r} not registered")
     if not await provider.is_available():

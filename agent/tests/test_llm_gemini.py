@@ -1,12 +1,13 @@
 """Tests for the Gemini provider.
 
-The provider invokes ``gemini`` synchronously via ``subprocess.run`` (a
-deliberate Windows-compat choice — asyncio subprocess on Windows requires
+The provider invokes ``gemini`` via ``subprocess.run`` in a worker thread
+(a deliberate Windows-compat choice — asyncio subprocess on Windows requires
 ``ProactorEventLoop`` which FastAPI doesn't use). Tests stub
 ``subprocess.run`` at the module boundary and assert on the argv it
 receives plus the JSON envelope it returns.
 
 CLI args under test:
+- ``--skip-trust``  session-scoped workspace trust for headless calls
 - ``-m <model>``     stable-tier pin (default ``gemini-2.5-flash``)
 - ``-o json``        structured envelope, parsed into ``response`` field
 - ``-p <prompt>``    user prompt (system + attachments folded in body)
@@ -216,6 +217,19 @@ async def test_run_pins_stable_model_via_m_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_passes_skip_trust_for_headless_workspace(monkeypatch):
+    """Headless provider calls need session-scoped trust; otherwise
+    Gemini CLI exits 55 when Flowboard runs from an untrusted folder."""
+    p = GeminiProvider()
+    _stub_resolve(monkeypatch)
+    state = _stub_run(monkeypatch, _FakeResult(returncode=0, stdout=_envelope("ok")))
+    await p.run("hi")
+    argv = list(state["calls"][0][0][0])
+    assert argv[0] == "/fake/bin/gemini"
+    assert "--skip-trust" in argv
+
+
+@pytest.mark.asyncio
 async def test_run_respects_env_var_model_override(monkeypatch):
     p = GeminiProvider()
     _stub_resolve(monkeypatch)
@@ -245,8 +259,10 @@ async def test_run_no_system_prompt_omits_system_block(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_inlines_attachments_as_at_paths(monkeypatch, tmp_path):
     p = GeminiProvider()
-    img1 = tmp_path / "a.jpg"; img1.write_bytes(b"fake")
-    img2 = tmp_path / "b.jpg"; img2.write_bytes(b"fake")
+    img1 = tmp_path / "a.jpg"
+    img1.write_bytes(b"fake")
+    img2 = tmp_path / "b.jpg"
+    img2.write_bytes(b"fake")
     _stub_resolve(monkeypatch)
     state = _stub_run(monkeypatch, _FakeResult(returncode=0, stdout=_envelope("ok")))
     await p.run("describe", attachments=[str(img1), str(img2)])
@@ -260,7 +276,8 @@ async def test_run_inlines_attachments_as_at_paths(monkeypatch, tmp_path):
 async def test_run_attachments_use_absolute_paths(monkeypatch, tmp_path):
     """@<path> tokens must be absolute so the CLI's cwd doesn't matter."""
     p = GeminiProvider()
-    img = tmp_path / "x.jpg"; img.write_bytes(b"fake")
+    img = tmp_path / "x.jpg"
+    img.write_bytes(b"fake")
     _stub_resolve(monkeypatch)
     state = _stub_run(monkeypatch, _FakeResult(returncode=0, stdout=_envelope("ok")))
     await p.run("describe", attachments=[str(img)])

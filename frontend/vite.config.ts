@@ -10,12 +10,13 @@ export default defineConfig({
     },
   },
   server: {
+    host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8101",
-      "/media": "http://localhost:8101",
+      "/api": "http://127.0.0.1:8101",
+      "/media": "http://127.0.0.1:8101",
       "/ws": {
-        target: "ws://localhost:8101",
+        target: "ws://127.0.0.1:8101",
         ws: true,
       },
     },
