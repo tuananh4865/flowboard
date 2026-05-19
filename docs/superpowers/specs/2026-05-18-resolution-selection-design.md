@@ -73,14 +73,73 @@ Body:  { "resolution": "2K" | "4K" | "1080" | "4K" }
 **Note:** `270p` and `720p` do NOT call the upscale endpoint — they use the
 cached asset directly.
 
-### Flow Upscale API (to be reverse-engineered)
+### Flow Upscale API (reverse-engineered from Flow Web UI)
 
-The endpoint path, auth mechanism, and response shape are captured from the
-Flow Web UI via Chrome DevTools network panel. Currently unknown — this section
-will be updated once the live traffic is captured.
+#### Image Upscale
+```
+POST https://aisandbox-pa.googleapis.com/v1/flow/upsampleImage
+Content-Type: text/plain;charset=UTF-8
+Authorization: Bearer <token>
+Origin: https://labs.google
+Referer: https://labs.google/
 
-The backend is assumed to call the Flow API using the same
-`flow_client.api_request()` pattern already used for generation.
+Body:
+{
+  "mediaId": "<uuid>",
+  "targetResolution": "UPSAMPLE_IMAGE_RESOLUTION_2K" | "UPSAMPLE_IMAGE_RESOLUTION_4K",
+  "clientContext": {
+    "recaptchaContext": { "token": "<captcha_token>" },
+    "projectId": "<project_uuid>",
+    "tool": "PINHOLE",
+    "userPaygateTier": "PAYGATE_TIER_ONE" | "PAYGATE_TIER_TWO",
+    "sessionId": ";<timestamp>"
+  }
+}
+```
+
+#### Video Upscale
+```
+POST https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo
+Content-Type: text/plain;charset=UTF-8
+Authorization: Bearer <token>
+Origin: https://labs.google
+Referer: https://labs.google/
+
+Body:
+{
+  "mediaGenerationContext": {
+    "batchId": "<uuid>"
+  },
+  "clientContext": {
+    "projectId": "<project_uuid>",
+    "recaptchaContext": { "token": "<captcha_token>" },
+    "tool": "PINHOLE",
+    "userPaygateTier": "PAYGATE_TIER_ONE" | "PAYGATE_TIER_TWO",
+    "sessionId": ";<timestamp>"
+  },
+  "requests": [{
+    "resolution": "VIDEO_RESOLUTION_1080P" | "VIDEO_RESOLUTION_4K",
+    "aspectRatio": "VIDEO_ASPECT_RATIO_PORTRAIT" | "VIDEO_ASPECT_RATIO_LANDSCAPE",
+    "videoModelKey": "veo_3_1_upsampler_1080p" | "veo_3_1_upsampler_4k",
+    "seed": <number>,
+    "videoInput": { "mediaId": "<uuid>" }
+  }],
+  "useV2ModelConfig": true
+}
+```
+
+Video upscale model keys:
+- `veo_3_1_upsampler_1080p` — 1080p upscaling
+- `veo_3_1_upsampler_4k` — 4K upscaling (Ultra tier)
+
+Image upscale target resolutions:
+- `UPSAMPLE_IMAGE_RESOLUTION_2K` — 2× upscaling
+- `UPSAMPLE_IMAGE_RESOLUTION_4K` — 4× upscaling
+
+#### Response shape
+Both return `{raw: <Flow response>}` with operation/workflow name. Poll via
+`check_async()` (video) or `GET /v1/media/<id>` (image) until `video.encodedVideo`
+/ `image.generatedImage` appears.
 
 ### Polling
 
