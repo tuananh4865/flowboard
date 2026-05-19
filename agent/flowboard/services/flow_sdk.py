@@ -28,6 +28,8 @@ TRPC_CREATE_PROJECT = "https://labs.google/fx/api/trpc/project.createProject"
 VIDEO_I2V_URL = f"{FLOW_API_BASE}/v1/video:batchAsyncGenerateVideoStartImage"
 VIDEO_POLL_URL = f"{FLOW_API_BASE}/v1/video:batchCheckAsyncVideoGenerationStatus"
 UPLOAD_IMAGE_URL = f"{FLOW_API_BASE}/v1/flow/uploadImage"
+IMAGE_UPSAMPLE_URL = f"{FLOW_API_BASE}/v1/flow/upsampleImage"
+VIDEO_UPSAMPLE_URL = f"{FLOW_API_BASE}/v1/video:batchAsyncGenerateVideoUpsampleVideo"
 
 
 def _media_get_url(media_id: str) -> str:
@@ -777,6 +779,125 @@ class FlowSDK:
             )
             return {"raw": resp, "error": "no_media_id_in_upload_response"}
         return {"raw": resp, "media_id": media_id}
+
+    # ── image upscale ───────────────────────────────────────────────────────
+    async def upscale_image(
+        self,
+        media_id: str,
+        target_resolution: str,
+        project_id: str,
+        paygate_tier: str,
+        captcha_token: str,
+    ) -> dict[str, Any]:
+        """Upscale an existing image to 2K or 4K.
+
+        ``target_resolution`` is ``"UPSAMPLE_IMAGE_RESOLUTION_2K"`` or
+        ``"UPSAMPLE_IMAGE_RESOLUTION_4K"``.
+
+        Returns ``{raw, operation_name, media_id}`` on success or
+        ``{raw, error}`` on failure.
+        """
+        body = {
+            "mediaId": media_id,
+            "targetResolution": target_resolution,
+            "clientContext": {
+                "recaptchaContext": {"token": captcha_token},
+                "projectId": project_id,
+                "tool": "PINHOLE",
+                "userPaygateTier": paygate_tier,
+                "sessionId": f";{int(time.time() * 1000)}",
+            },
+        }
+        resp = await self._client.api_request(
+            url=IMAGE_UPSAMPLE_URL,
+            method="POST",
+            headers=dict(_API_HEADERS),
+            body=body,
+            captcha_action=CAPTCHA_IMAGE,
+        )
+        if isinstance(resp, dict) and resp.get("error"):
+            return {"raw": resp, "error": resp["error"]}
+        inner_err = _extract_inner_api_error(resp)
+        if inner_err:
+            return {"raw": resp, "error": inner_err}
+
+        # Response is a media object with the upscaled image; extract media_id.
+        entries = extract_media_entries(resp)
+        if not entries:
+            return {"raw": resp, "error": "no_media_entries_in_upscale_response"}
+        return {"raw": resp, "media_id": entries[0]["media_id"], "url": entries[0]["url"]}
+
+    # ── video upscale ────────────────────────────────────────────────────────
+    async def upscale_video(
+        self,
+        media_id: str,
+        resolution: str,
+        aspect_ratio: str,
+        project_id: str,
+        paygate_tier: str,
+        captcha_token: str,
+        seed: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Upscale a video to 1080p or 4K.
+
+        ``resolution`` is ``"VIDEO_RESOLUTION_1080P"`` or ``"VIDEO_RESOLUTION_4K"``.
+        ``aspect_ratio`` is ``"VIDEO_ASPECT_RATIO_LANDSCAPE"`` or
+        ``"VIDEO_ASPECT_RATIO_PORTRAIT"``.
+
+        Returns ``{raw, operation_names}`` on success or ``{raw, error}`` on
+        failure. Operations are async — the caller polls ``check_async``.
+        """
+        model_key: Optional[str] = None
+        if resolution == "VIDEO_RESOLUTION_4K":
+            model_key = "veo_3_1_upsampler_4k"
+        elif resolution == "VIDEO_RESOLUTION_1080P":
+            model_key = "veo_3_1_upsampler_1080p"
+
+        if model_key is None:
+            return {"raw": None, "error": f"unknown_upscale_resolution: {resolution}"}
+
+        body = {
+            "mediaGenerationContext": {
+                "batchId": str(uuid.uuid4()),
+            },
+            "clientContext": {
+                "projectId": project_id,
+                "recaptchaContext": {"token": captcha_token},
+                "tool": "PINHOLE",
+                "userPaygateTier": paygate_tier,
+                "sessionId": f";{int(time.time() * 1000)}",
+            },
+            "requests": [
+                {
+                    "resolution": resolution,
+                    "aspectRatio": aspect_ratio,
+                    "videoModelKey": model_key,
+                    "metadata": {},
+                    "seed": seed or int(time.time() % 1_000_000),
+                    "videoInput": {"mediaId": media_id},
+                }
+            ],
+            "useV2ModelConfig": True,
+        }
+        resp = await self._client.api_request(
+            url=VIDEO_UPSAMPLE_URL,
+            method="POST",
+            headers=dict(_API_HEADERS),
+            body=body,
+            captcha_action=CAPTCHA_VIDEO,
+        )
+        if isinstance(resp, dict) and resp.get("error"):
+            return {"raw": resp, "error": resp["error"]}
+        inner_err = _extract_inner_api_error(resp)
+        if inner_err:
+            return {"raw": resp, "error": inner_err}
+
+        op_names = extract_operation_names(resp)
+        workflows = extract_video_workflows(resp)
+        out: dict[str, Any] = {"raw": resp, "operation_names": op_names}
+        if workflows:
+            out["workflows"] = workflows
+        return out
 
 
 def _extract_project_id(resp: Any) -> Optional[str]:

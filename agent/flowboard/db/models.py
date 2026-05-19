@@ -74,6 +74,16 @@ class Asset(SQLModel, table=True):
     local_path: Optional[str] = None
     mime: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
+    # Upscale tracking: status mirrors Asset lifecycle states.
+    # "ready" is the default (cached asset is available).
+    # "upscaling" means an upscale job is in-flight for this asset.
+    status: str = "ready"
+    # UUID of the active Flow upscale job. Set when upscale starts;
+    # cleared when the job completes or fails.
+    upscale_job_id: Optional[str] = None
+    # Target resolution of the in-flight (or last completed) upscale,
+    # e.g. "2K", "4K", "1080", "4K". Cleared on next direct-download.
+    upscale_resolution: Optional[str] = None
 
 
 class ChatMessage(SQLModel, table=True):

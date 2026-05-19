@@ -228,3 +228,34 @@ def _mime_from_ext(ext: str) -> str:
         if e == ext:
             return mime
     return "application/octet-stream"
+
+
+def upscale_resolution_for_asset(media_id: str) -> Optional[str]:
+    """Return the current resolution label for an asset by checking its URL.
+
+    Returns "1K" for standard images, "720p" for standard videos, or None
+    if the asset is not found.
+    """
+    with get_session() as s:
+        row = s.exec(
+            select(Asset).where(Asset.uuid_media_id == media_id)
+        ).first()
+        if row is None:
+            return None
+        kind = row.kind
+        if kind == "image":
+            return "1K"
+        if kind == "video":
+            return "720p"
+    return None
+
+
+IMAGE_UPSCALE_RESOLUTIONS = {
+    "2K": "UPSAMPLE_IMAGE_RESOLUTION_2K",
+    "4K": "UPSAMPLE_IMAGE_RESOLUTION_4K",
+}
+
+VIDEO_UPSCALE_RESOLUTIONS = {
+    "1080": "VIDEO_RESOLUTION_1080P",
+    "4K": "VIDEO_RESOLUTION_4K",
+}
