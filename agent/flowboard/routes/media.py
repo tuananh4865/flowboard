@@ -79,6 +79,7 @@ def get_media_status(media_id: str):
 
 class UpscaleRequest(BaseModel):
     resolution: str  # e.g. "2K", "4K", "1080", "4K"
+    captcha_token: str = ""  # Optional; frontend injects one from the extension
 
 
 @api_router.post("/{media_id}/upscale")
@@ -106,7 +107,7 @@ async def upscale_media(media_id: str, body: UpscaleRequest):
     project_id = _derive_project_id(asset)
 
     paygate_tier = flow_client.paygate_tier or "PAYGATE_TIER_ONE"
-    captcha_token = ""  # Extension fills recaptchaContext via WS
+    captcha_token = body.captcha_token or ""
 
     kind = asset.kind or "image"
 

@@ -694,6 +694,17 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
     return true;
   }
 
+  if (msg.type === 'GET_CAPTCHA_TOKEN') {
+    const { pageAction = 'upscale' } = msg;
+    const requestId = `fnt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    solveCaptcha(requestId, pageAction)
+      .then((result) => {
+        reply({ token: result?.token || null, error: result?.error || null });
+      })
+      .catch((e) => reply({ error: e.message }));
+    return true; // keep channel open for async reply
+  }
+
   if (msg.type === 'REFRESH_TOKEN') {
     captureTokenFromFlowTab()
       .then(() => reply({ ok: true }))
