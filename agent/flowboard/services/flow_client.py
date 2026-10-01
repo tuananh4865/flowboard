@@ -174,8 +174,8 @@ class FlowClient:
                     params={"key": _FLOW_API_KEY},
                     headers={
                         "authorization": f"Bearer {self._flow_key}",
-                        "origin": "https://labs.google",
-                        "referer": "https://labs.google/",
+                        "origin": "https://flow.google.com",
+                        "referer": "https://flow.google.com/",
                     },
                 )
         except httpx.HTTPError as exc:

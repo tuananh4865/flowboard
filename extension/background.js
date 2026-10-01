@@ -21,7 +21,13 @@ let metrics = {
   lastError:       null,
 };
 
-const flowUrls = ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'];
+// Flow moved from labs.google/fx/tools/flow to flow.google.com (the old URL now
+// 308-redirects). Keep the legacy patterns so an old tab still matches.
+const flowUrls = [
+  'https://flow.google.com/*',
+  'https://labs.google/fx/tools/flow*',
+  'https://labs.google/fx/*/tools/flow*',
+];
 
 // ─── URL → Log Type Classifier ─────────────────────────────
 
@@ -116,7 +122,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
       fetchAndPushUserInfo(token);
     }
   },
-  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://labs.google/*'] },
+  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://flow.google.com/*', 'https://labs.google/*'] },
   ['requestHeaders', 'extraHeaders'],
 );
 
@@ -406,7 +412,7 @@ async function handleApiRequest(msg) {
 
 let _openingFlowTab = false;
 
-const FLOW_URL = 'https://labs.google/fx/tools/flow';
+const FLOW_URL = 'https://flow.google.com/';
 
 /**
  * Open a Flow tab even when Chrome has zero windows. `chrome.tabs.create`
@@ -432,9 +438,7 @@ async function openFlowTabResilient(active = false) {
 }
 
 async function captureTokenFromFlowTab() {
-  const tabs = await chrome.tabs.query({
-    url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
-  });
+  const tabs = await chrome.tabs.query({ url: flowUrls });
 
   if (!tabs.length) {
     if (_openingFlowTab) return;
@@ -454,7 +458,7 @@ async function captureTokenFromFlowTab() {
     // Trigger a credentialed request so the page re-issues an Authorization header
     await chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      func:   () => fetch('/fx/tools/flow', { credentials: 'include' }),
+      func:   () => fetch(location.pathname, { credentials: 'include' }),
     });
     console.log('[Flowboard] Token refresh triggered on Flow tab');
   } catch (e) {
@@ -675,9 +679,7 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
   }
 
   if (msg.type === 'OPEN_FLOW_TAB') {
-    chrome.tabs.query({
-      url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
-    }).then(async (tabs) => {
+    chrome.tabs.query({ url: flowUrls }).then(async (tabs) => {
       try {
         if (tabs.length) {
           await chrome.tabs.update(tabs[0].id, { active: true });

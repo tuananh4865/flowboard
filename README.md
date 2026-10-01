@@ -63,12 +63,12 @@
 > 1. **Google Flow plan: `Pro` or `Ultra` only.** Veo 3.1 i2v + GEM_PIX_2
 >    are gated to paid tiers. The free tier and trial accounts cannot
 >    drive video generation, so Flowboard cannot work on them. Confirm
->    your plan at [labs.google/fx](https://labs.google/fx/tools/flow)
+>    your plan at [flow.google.com](https://flow.google.com/)
 >    before installing.
 > 2. **Chrome extension is mandatory.** All generation requests are
 >    proxied through `extension/` (Chrome MV3) so the agent can ride
 >    your authenticated Flow session + reCAPTCHA token. Without the
->    extension loaded and connected to `labs.google/fx/tools/flow`, the
+>    extension loaded and connected to `flow.google.com`, the
 >    `▶ Generate` button does nothing.
 > 3. **One LLM CLI on `PATH` for auto-prompt / vision / planner.**
 >    Flowboard ships a swappable provider layer — pick one in
@@ -352,7 +352,7 @@ matching vocab from the system prompt.
   through the extension, and shells out to the configured LLM CLI
   (Claude / Gemini / Codex — see *AI Providers* below) for vision +
   auto-prompt + planner synthesis.
-- **Extension** — Chrome MV3. Lives on `labs.google/fx/tools/flow`,
+- **Extension** — Chrome MV3. Lives on `flow.google.com`,
   intercepts Flow's API calls (multimodal-fetch in MAIN world for the
   reCAPTCHA token), proxies them over a localhost WebSocket so the
   agent never has to touch the browser cookie jar directly.
@@ -373,7 +373,7 @@ matching vocab from the system prompt.
 | **Node 20+** | Frontend dev server (Vite) |
 | **Chrome / Chromium** | **Mandatory** — hosts the MV3 extension that proxies every Google Flow API call. The agent has zero direct path to Flow without it. |
 | **One LLM CLI** on `PATH` | Vision describe + auto-prompt + planner. Pick one — defaults to **Claude Code** ([`@anthropic-ai/claude-code`](https://docs.claude.com/claude-code/install)); also supports **Gemini CLI** ([`@google/gemini-cli`](https://github.com/google-gemini/gemini-cli)) and **OpenAI Codex** ([`@openai/codex`](https://github.com/openai/codex), provider implemented but not yet smoke-tested). All use OAuth against your existing AI subscription — no API key needed. |
-| **Google Flow `Pro` or `Ultra` plan** at [`labs.google/fx/tools/flow`](https://labs.google/fx/tools/flow) | **Free tier and trial accounts will not work.** Veo 3.1 i2v + GEM_PIX_2 image gen are gated to paid plans. |
+| **Google Flow `Pro` or `Ultra` plan** at [`flow.google.com`](https://flow.google.com/) | **Free tier and trial accounts will not work.** Veo 3.1 i2v + GEM_PIX_2 image gen are gated to paid plans. |
 
 > **Windows:** Use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install). All commands assume a Unix shell.
 
@@ -404,7 +404,7 @@ cd flowboard
 
 1. Open `chrome://extensions/` → enable **Developer mode** (top-right).
 2. Click **Load unpacked** → pick the `extension/` folder in this repo.
-3. Open a tab to <https://labs.google/fx/tools/flow> and sign in.
+3. Open a tab to <https://flow.google.com/> and sign in.
 4. The extension's icon should turn coloured once it captures a fresh
    Flow auth token (~5 s).
 
@@ -638,7 +638,7 @@ MIT (proposed — license file pending).
 ## Credits
 
 Generated media in this README was produced through the pipeline using
-[Google Flow](https://labs.google/flow). Auto-prompt + vision synthesis
+[Google Flow](https://flow.google.com). Auto-prompt + vision synthesis
 defaults to [Claude](https://claude.ai) via the local CLI; multi-LLM
 support adds Google's [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 and OpenAI's [Codex CLI](https://github.com/openai/codex) as alternative

@@ -180,7 +180,7 @@ async def test_fetch_paygate_tier_resolves_authoritatively(monkeypatch):
     assert captured["url"] == "https://aisandbox-pa.googleapis.com/v1/credits"
     assert captured["params"]["key"].startswith("AIza")  # public Flow key
     assert captured["headers"]["authorization"] == "Bearer ya29.fake-bearer-token"
-    assert captured["headers"]["origin"] == "https://labs.google"
+    assert captured["headers"]["origin"] == "https://flow.google.com"
 
 
 @pytest.mark.asyncio

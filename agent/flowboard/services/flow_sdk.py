@@ -238,8 +238,8 @@ _TRPC_HEADERS = {
 _API_HEADERS = {
     "content-type": "text/plain;charset=UTF-8",
     "accept": "*/*",
-    "origin": "https://labs.google",
-    "referer": "https://labs.google/",
+    "origin": "https://flow.google.com",
+    "referer": "https://flow.google.com/",
 }
 
 
