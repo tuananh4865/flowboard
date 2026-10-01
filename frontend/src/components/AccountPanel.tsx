@@ -328,7 +328,7 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
           </div>
           <a
             className="account-panel__tier-warning-cta"
-            href="https://labs.google/fx/tools/flow"
+            href="https://flow.google.com/"
             target="_blank"
             rel="noopener noreferrer"
           >

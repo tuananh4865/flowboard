@@ -1,4 +1,4 @@
-.PHONY: help install install-dev update dev agent frontend extension clean
+.PHONY: smoke help install install-dev update dev agent frontend extension clean
 
 # Prefer uv (https://github.com/astral-sh/uv) — ~10× faster than pip.
 # Falls back to stdlib venv + pip when uv is not installed.
@@ -54,3 +54,6 @@ frontend:
 
 clean:
 	rm -rf agent/.venv agent/**/__pycache__ frontend/node_modules frontend/dist
+
+smoke:
+	python scripts/smoke_flow.py

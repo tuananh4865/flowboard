@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Flowboard Bridge",
-  "version": "0.0.5",
-  "description": "Local bridge that proxies Flowboard agent requests to authenticated labs.google sessions.",
+  "version": "0.0.6",
+  "description": "Local bridge that proxies Flowboard agent requests to authenticated Google Flow (flow.google.com) sessions.",
   "permissions": ["storage", "alarms", "tabs", "webRequest", "scripting", "declarativeNetRequest"],
   "host_permissions": [
     "https://aisandbox-pa.googleapis.com/*",
+    "https://flow.google.com/*",
     "https://labs.google/*",
     "http://127.0.0.1:8101/*",
     "http://localhost:8101/*"
@@ -20,6 +21,7 @@
   "content_scripts": [
     {
       "matches": [
+        "https://flow.google.com/*",
         "https://labs.google/fx/tools/flow*",
         "https://labs.google/fx/*/tools/flow*"
       ],
@@ -30,7 +32,7 @@
   "web_accessible_resources": [
     {
       "resources": ["injected.js"],
-      "matches": ["https://labs.google/*"]
+      "matches": ["https://flow.google.com/*", "https://labs.google/*"]
     }
   ],
   "declarative_net_request": {

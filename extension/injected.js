@@ -1,5 +1,5 @@
 /**
- * Injected into MAIN world on labs.google — has access to window.grecaptcha.
+ * Injected into MAIN world on flow.google.com (and legacy labs.google) — has access to window.grecaptcha.
  * Used solely for reCAPTCHA solving. Media URLs come from the generation API
  * response directly (agent extracts fifeUrl from data.media[].image), so no
  * TRPC response interception is needed.

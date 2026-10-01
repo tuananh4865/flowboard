@@ -21,7 +21,7 @@ function humanizeBackendError(token: string): string | null {
     return (
       "Flowboard doesn't know your Google Flow plan tier yet — the "
       + "extension hasn't seen a Flow request that exposes it. Open "
-      + "https://labs.google/fx/tools/flow in a tab and reload it once, "
+      + "https://flow.google.com/ in a tab and reload it once, "
       + "then retry. Flowboard refuses to dispatch in this state to "
       + "avoid silently serving Ultra users at the Pro checkpoint."
     );
